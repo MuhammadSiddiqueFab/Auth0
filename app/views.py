@@ -52,6 +52,36 @@ def logout(request):
         f'https://{settings.AUTH0_DOMAIN}/v2/logout?client_id={settings.AUTH0_CLIENT_ID}&returnTo={request.build_absolute_uri(reverse("home"))}'
     )
 
+def detect_auth_provider(user_info):
+    """
+    Detect the authentication provider based on user_info.
+    Returns 'google', 'github', or 'unknown'
+    """
+    # Check for Google-specific fields
+    if 'iss' in user_info and 'accounts.google.com' in user_info['iss']:
+        return 'google'
+    
+    # Check for GitHub-specific fields
+    if 'github_username' in user_info or 'github_id' in user_info:
+        return 'github'
+    
+    # Check domain patterns
+    email = user_info.get('email', '')
+    if email:
+        # Google accounts typically have gmail.com or googlemail.com
+        if any(domain in email for domain in ['gmail.com', 'googlemail.com']):
+            return 'google'
+        # GitHub accounts might have github.com in email or other patterns
+        if 'github.com' in email:
+            return 'github'
+    
+    # Check nickname patterns (GitHub usernames are often used as nicknames)
+    nickname = user_info.get('nickname', '')
+    if nickname and not email:  # If no email but has nickname, might be GitHub
+        return 'github'
+    
+    return 'unknown'
+
 def get_github_repositories(user_info):
     """
     Fetch GitHub repositories for the authenticated user.
@@ -70,6 +100,8 @@ def get_github_repositories(user_info):
             github_username = user_info['nickname']
         elif 'preferred_username' in user_info:
             github_username = user_info['preferred_username']
+        elif 'login' in user_info:
+            github_username = user_info['login']
         
         if not github_username:
             return []
@@ -119,16 +151,41 @@ class UserView(APIView):
         
         user_info = request.session.get('user_info', {})
         
-        # Get user repositories
-        repositories = get_github_repositories(user_info)
+        # Detect authentication provider
+        auth_provider = detect_auth_provider(user_info)
         
-        # Prepare response data
-        response_data = {
-            'username': request.user.username,
-            'name': user_info.get('name', ''),
-            'email': user_info.get('email', ''),
-            'repositories': repositories,
-            'repositories_count': len(repositories)
-        }
+        # Prepare response data based on authentication provider
+        if auth_provider == 'google':
+            # For Google login: return first_name, last_name, email (no repositories)
+            full_name = user_info.get('name', '').split(' ', 1)
+            response_data = {
+                'provider': 'google',
+                'first_name': full_name[0] if len(full_name) > 0 else '',
+                'last_name': full_name[1] if len(full_name) > 1 else '',
+                'email': user_info.get('email', ''),
+                'username': request.user.username
+            }
+        elif auth_provider == 'github':
+            # For GitHub login: return email, username, and repositories
+            repositories = get_github_repositories(user_info)
+            response_data = {
+                'provider': 'github',
+                'username': request.user.username,
+                'email': user_info.get('email', ''),
+                'github_username': user_info.get('nickname', user_info.get('login', '')),
+                'repositories': repositories,
+                'repositories_count': len(repositories)
+            }
+        else:
+            # For unknown provider: return basic info
+            repositories = get_github_repositories(user_info) if user_info.get('nickname') else []
+            response_data = {
+                'provider': 'unknown',
+                'username': request.user.username,
+                'name': user_info.get('name', ''),
+                'email': user_info.get('email', ''),
+                'repositories': repositories,
+                'repositories_count': len(repositories)
+            }
         
         return Response(response_data)
