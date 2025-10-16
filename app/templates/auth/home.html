@@ -1,0 +1,14 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Auth0 Social Login</title>
+</head>
+<body>
+    <h1>Welcome to Django DRF Auth0</h1>
+    {% if user.is_authenticated %}
+        <p>Hello, {{ user.name }}! <a href="{% url 'user' %}">View Profile (API)</a> | <a href="{% url 'logout' %}">Logout</a></p>
+    {% else %}
+        <p><a href="{% url 'login' %}">Login with Social Media</a></p>
+    {% endif %}
+</body>
+</html>

@@ -1,0 +1,7 @@
+env/
+.env
+*.pyc
+app/migrations/
+app/__pycache__/
+project/__pycache__/
+project/migrations/
